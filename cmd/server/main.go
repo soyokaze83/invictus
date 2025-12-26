@@ -7,6 +7,7 @@ import (
 
 	"github.com/soyokaze83/invictus/internal/config"
 	"github.com/soyokaze83/invictus/internal/handler"
+	"github.com/soyokaze83/invictus/internal/middleware"
 	"github.com/soyokaze83/invictus/internal/service"
 )
 
@@ -28,10 +29,14 @@ func main() {
 		return
 	}
 
-	// init query handler
+	// init handlers
 	queryHandler := handler.NewQueryHandler(llmService)
-	http.HandleFunc("/", queryHandler.ReadRoot)
-	http.HandleFunc("POST /query", queryHandler.HandleQuery)
 
-	http.ListenAndServe(":8000", nil)
+	// apply mux on routes
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", queryHandler.ReadRoot)
+	mux.HandleFunc("POST /query", queryHandler.HandleQuery)
+
+	loggedMux := middleware.LoggingMiddleware(mux)
+	http.ListenAndServe(":8000", loggedMux)
 }
