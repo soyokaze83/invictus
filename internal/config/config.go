@@ -10,10 +10,12 @@ import (
 )
 
 type Config struct {
-	APIKey     string
-	ModelType  string
-	ModelName  string
-	PortNumber int
+	APIKey         string
+	ModelType      string
+	ModelName      string
+	EmbeddingModel string
+	PortNumber     int
+	PostgresURL    string
 }
 
 func LoadConfig() (*Config, error) {
@@ -26,6 +28,8 @@ func LoadConfig() (*Config, error) {
 
 	modelType := os.Getenv("MODEL_TYPE")
 	modelName := os.Getenv("MODEL_NAME")
+	embeddingModel := os.Getenv("EMBEDDING_MODEL_NAME")
+	postgresURL := os.Getenv("POSTGRES_URL")
 	portNumber, err := strconv.Atoi(os.Getenv("PORT_NUMBER"))
 	if err != nil {
 		portNumber = 8000
@@ -33,9 +37,11 @@ func LoadConfig() (*Config, error) {
 	}
 
 	cfg := &Config{
-		ModelType:  modelType,
-		ModelName:  modelName,
-		PortNumber: portNumber,
+		ModelType:      modelType,
+		ModelName:      modelName,
+		PostgresURL:    postgresURL,
+		EmbeddingModel: embeddingModel,
+		PortNumber:     portNumber,
 	}
 
 	keyMapping := map[string]string{

@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/soyokaze83/invictus/internal/config"
@@ -18,14 +18,14 @@ func main() {
 	// load configs
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Println(err)
+		slog.Error("Failed to load config", "error", err)
 		return
 	}
 
 	// init services
 	llmService, err := service.NewGeminiService(ctx, cfg.APIKey, cfg.ModelName)
 	if err != nil {
-		log.Println("Error initializing LLM model")
+		slog.Error("Error initializing LLM model")
 		return
 	}
 

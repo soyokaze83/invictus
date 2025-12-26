@@ -51,3 +51,12 @@ func (s *GeminiService) getResponseText(resp *genai.GenerateContentResponse) str
 	}
 	return fullText
 }
+
+func (s *GeminiService) Embed(ctx context.Context, text string) ([]float32, error) {
+	em := s.client.EmbeddingModel("gemini-embedding-001")
+	res, err := em.EmbedContent(ctx, genai.Text(text))
+	if err != nil {
+		return nil, err
+	}
+	return res.Embedding.Values, nil
+}
