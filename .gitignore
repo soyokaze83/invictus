@@ -16,3 +16,4 @@ vendor/
 
 # Personal/Tooling
 .env
+tmp
