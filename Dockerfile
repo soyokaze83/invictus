@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 
@@ -27,6 +27,9 @@ RUN apk add --no-cache ca-certificates
 # Copy binaries from builder
 COPY --from=builder /app/ingestion .
 COPY --from=builder /app/server .
+
+# Expose ports for ingestion (8081) and server (8082)
+EXPOSE 8081 8082
 
 # Default command (can be overridden in docker-compose)
 CMD ["./ingestion"]
