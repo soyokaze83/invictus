@@ -23,10 +23,7 @@ type Config struct {
 func LoadConfig() (*Config, error) {
 
 	// load env variable
-	err := godotenv.Load()
-	if err != nil {
-		return nil, err
-	}
+	_ = godotenv.Load()
 
 	modelType := os.Getenv("MODEL_TYPE")
 	modelName := os.Getenv("MODEL_NAME")
