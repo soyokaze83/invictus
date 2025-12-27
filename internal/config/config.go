@@ -5,17 +5,19 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	APIKey         string
+	APIKeys        []string
 	ModelType      string
 	ModelName      string
 	EmbeddingModel string
-	PortNumber     int
 	PostgresURL    string
+	TargetHour     int
+	PortNumber     int
 }
 
 func LoadConfig() (*Config, error) {
@@ -30,6 +32,11 @@ func LoadConfig() (*Config, error) {
 	modelName := os.Getenv("MODEL_NAME")
 	embeddingModel := os.Getenv("EMBEDDING_MODEL_NAME")
 	postgresURL := os.Getenv("POSTGRES_URL")
+	targetHour, err := strconv.Atoi(os.Getenv("TARGET_HOUR"))
+	if err != nil {
+		targetHour = 9
+		log.Println("Invalid target hour, using 9 as default")
+	}
 	portNumber, err := strconv.Atoi(os.Getenv("PORT_NUMBER"))
 	if err != nil {
 		portNumber = 8000
@@ -41,6 +48,7 @@ func LoadConfig() (*Config, error) {
 		ModelName:      modelName,
 		PostgresURL:    postgresURL,
 		EmbeddingModel: embeddingModel,
+		TargetHour:     targetHour,
 		PortNumber:     portNumber,
 	}
 
@@ -53,11 +61,9 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("Unsupported model type %s", cfg.ModelType)
 	}
 
-	// set apiKey to config object
-	cfg.APIKey = os.Getenv(apiKey)
-
-	err = cfg.Validate()
-	if err != nil {
+	// set API keys to config object
+	cfg.APIKeys = strings.Split(os.Getenv(apiKey), ",")
+	if err = cfg.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -65,9 +71,13 @@ func LoadConfig() (*Config, error) {
 }
 
 func (c *Config) Validate() error {
-	if c.APIKey == "" {
-		return fmt.Errorf("API key is required for model type %s", c.ModelType)
+	// validate API keys
+	for _, apiKey := range c.APIKeys {
+		if apiKey == "" {
+			return fmt.Errorf("API key is required for model type %s", c.ModelType)
+		}
 	}
+	// validate model name
 	if c.ModelName == "" {
 		return fmt.Errorf("MODEL_NAME must be specified")
 	}

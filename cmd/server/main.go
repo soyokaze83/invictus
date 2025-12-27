@@ -23,7 +23,7 @@ func main() {
 	}
 
 	// init services
-	llmService, err := service.NewGeminiService(ctx, cfg.APIKey, cfg.ModelName)
+	llmService, err := service.NewGeminiService(ctx, cfg.APIKeys, cfg.ModelName)
 	if err != nil {
 		slog.Error("Error initializing LLM model")
 		return

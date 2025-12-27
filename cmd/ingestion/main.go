@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/soyokaze83/invictus/internal/config"
 	"github.com/soyokaze83/invictus/internal/domain"
@@ -31,25 +33,53 @@ func main() {
 	}
 	defer vdb.Close()
 
-	embedding_model, err := service.NewGeminiService(ctx, cfg.APIKey, cfg.ModelName)
+	embeddingModel, err := service.NewGeminiService(ctx, cfg.APIKeys, cfg.ModelName)
 	if err != nil {
 		slog.Error("Failed to init gemini", "error", err)
 		os.Exit(1)
 	}
-	defer embedding_model.Close()
+	defer embeddingModel.Close()
 
 	hn := hackernews.New()
 
-	// Fetch best story IDs
+	// Run immediately on start, then schedule
+	runIngestion(ctx, hn, embeddingModel, vdb)
+
+	go func() {
+		http.HandleFunc("/trigger-ingestion", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			go runIngestion(ctx, hn, embeddingModel, vdb)
+			w.Write([]byte("Ingestion triggered"))
+		})
+		slog.Info("Manual trigger endpoint listening on :8081")
+		http.ListenAndServe(":8081", nil)
+	}()
+
+	wib := time.FixedZone("WIB", 7*60*60) // UTC+7
+
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if time.Now().In(wib).Hour() == cfg.TargetHour {
+			runIngestion(ctx, hn, embeddingModel, vdb)
+		}
+	}
+
+}
+
+func runIngestion(ctx context.Context, hn *hackernews.Client, embeddingModel *service.GeminiService, vdb *vectordb.VectorDB) {
 	ids, err := hn.GetBestStories(ctx)
 	if err != nil {
 		slog.Error("Failed to fetch best stories", "error", err)
-		os.Exit(1)
+		return
 	}
 
-	// Process concurrently with worker pool
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 5) // 5 concurrent workers
+	sem := make(chan struct{}, 5)
 
 	for _, id := range ids {
 		wg.Add(1)
@@ -58,7 +88,7 @@ func main() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			if err := processStory(ctx, hn, embedding_model, vdb, storyID); err != nil {
+			if err := processStory(ctx, hn, embeddingModel, vdb, storyID); err != nil {
 				slog.Warn("Failed to process story", "id", storyID, "error", err)
 			}
 		}(id)
@@ -75,13 +105,11 @@ func processStory(
 	vdb *vectordb.VectorDB,
 	storyID int,
 ) error {
-	// fetch story information
 	story, err := hn.GetStory(ctx, storyID)
 	if err != nil {
 		return fmt.Errorf("fetch story: %w", err)
 	}
 
-	// check for empty url and content
 	if story.URL == "" {
 		return fmt.Errorf("no URL for story %d", storyID)
 	}
@@ -89,18 +117,15 @@ func processStory(
 		return fmt.Errorf("no content for story %d", storyID)
 	}
 
-	// truncate content for embedding
 	if len(story.Content) > 8000 {
 		story.Content = story.Content[:8000]
 	}
 
-	// generate embeddings with model
-	embedding, err := gemini.Embed(ctx, story.Content)
+	embedding, err := gemini.EmbedWithRetry(ctx, story.Content, 5)
 	if err != nil {
-		return fmt.Errorf("embed: %w", err)
+		return err
 	}
 
-	// store story in vectordb
 	embedded_story := domain.Story{
 		ID:        storyID,
 		Author:    story.Author,
