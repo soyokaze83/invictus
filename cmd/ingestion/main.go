@@ -200,10 +200,8 @@ func fetchStoriesParallel(ctx context.Context, hn *hackernews.Client, ids []int,
 				return
 			}
 
-			// Truncate content to 8000 chars for embedding
-			if len(story.Content) > 8000 {
-				story.Content = story.Content[:8000]
-			}
+			// Truncate content to 8000 runes for embedding (safe UTF-8 truncation)
+			story.Content = truncateUTF8(story.Content, 8000)
 
 			mu.Lock()
 			stories = append(stories, story)
@@ -213,6 +211,15 @@ func fetchStoriesParallel(ctx context.Context, hn *hackernews.Client, ids []int,
 
 	wg.Wait()
 	return stories
+}
+
+// truncateUTF8 safely truncates a string to maxRunes without cutting multi-byte characters.
+func truncateUTF8(s string, maxRunes int) string {
+	if utf8.RuneCountInString(s) <= maxRunes {
+		return s
+	}
+	runes := []rune(s)
+	return string(runes[:maxRunes])
 }
 
 // sanitizeUTF8 removes invalid UTF-8 sequences and problematic characters

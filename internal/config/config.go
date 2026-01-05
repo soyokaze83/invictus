@@ -31,11 +31,21 @@ func LoadConfig() (*Config, error) {
 	modelType := os.Getenv("MODEL_TYPE")
 	modelName := os.Getenv("MODEL_NAME")
 	embeddingModel := os.Getenv("EMBEDDING_MODEL_NAME")
-	embeddingDim, err := strconv.Atoi(os.Getenv("EMBEDDING_DIM"))
-	if err != nil {
+
+	// Auto-detect embedding dimension based on provider type
+	var embeddingDim int
+	switch modelType {
+	case "minilm":
+		embeddingDim = 384
+	case "gemini":
 		embeddingDim = 3072
-		log.Println("Invalid or missing EMBEDDING_DIM, using 3072 as default")
+	case "openai":
+		embeddingDim = 1536
+	default:
+		embeddingDim = 384
 	}
+
+	log.Printf("Using embedding dimension %d for provider %s", embeddingDim, modelType)
 	embeddingBatchSize, err := strconv.Atoi(os.Getenv("EMBEDDING_BATCH_SIZE"))
 	if err != nil || embeddingBatchSize <= 0 {
 		embeddingBatchSize = 100
@@ -67,6 +77,12 @@ func LoadConfig() (*Config, error) {
 		UseBatchEmbedding:  useBatchEmbedding,
 		TargetHour:         targetHour,
 		PortNumber:         portNumber,
+	}
+
+	// MiniLM doesn't require API keys
+	if cfg.ModelType == "minilm" {
+		cfg.APIKeys = []string{}
+		return cfg, nil
 	}
 
 	keyMapping := map[string]string{

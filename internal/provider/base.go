@@ -14,6 +14,7 @@ type ProviderType string
 const (
 	ProviderGemini ProviderType = "gemini"
 	ProviderOpenAI ProviderType = "openai"
+	ProviderMiniLM ProviderType = "minilm"
 )
 
 type BaseProvider struct {
@@ -55,6 +56,13 @@ func NewProvider(ctx context.Context, providerType ProviderType, modelName strin
 		return provider, nil
 	case ProviderOpenAI:
 		provider, err := NewOpenAIProvider(ctx, modelName, apiKeys)
+		if err != nil {
+			return nil, err
+		}
+		return provider, nil
+	case ProviderMiniLM:
+		// modelName is used as runtime path for minilm (e.g., "libonnxruntime.so")
+		provider, err := NewMiniLMProvider(ctx, modelName)
 		if err != nil {
 			return nil, err
 		}
