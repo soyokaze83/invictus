@@ -25,6 +25,9 @@ services:
     command: ["./ingestion"]
     env_file:
       - .env
+    environment:
+      # ONNX Runtime library path for MiniLM provider
+      LD_LIBRARY_PATH: /usr/local/lib
     ports:
       - "8081:8081"
     depends_on:

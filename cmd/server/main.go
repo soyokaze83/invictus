@@ -8,29 +8,30 @@ import (
 	"github.com/soyokaze83/invictus/internal/config"
 	"github.com/soyokaze83/invictus/internal/handler"
 	"github.com/soyokaze83/invictus/internal/middleware"
-	"github.com/soyokaze83/invictus/internal/service"
+	"github.com/soyokaze83/invictus/internal/provider"
 )
 
 func main() {
 
 	ctx := context.Background()
 
-	// load configs
+	// Load configurations
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		slog.Error("Failed to load config", "error", err)
 		return
 	}
 
-	// init services
-	llmService, err := service.NewGeminiService(ctx, cfg.APIKeys, cfg.ModelName)
+	// Initialize LLM provider
+	providerType := provider.ProviderType(cfg.ModelType)
+	llm, err := provider.NewProvider(ctx, providerType, cfg.ModelName, cfg.APIKeys)
 	if err != nil {
-		slog.Error("Error initializing LLM model")
+		slog.Error("Failed to initialize LLM", "error", err)
 		return
 	}
 
 	// init handlers
-	queryHandler := handler.NewQueryHandler(llmService)
+	queryHandler := handler.NewQueryHandler(llm)
 
 	// apply mux on routes
 	mux := http.NewServeMux()

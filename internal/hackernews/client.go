@@ -7,23 +7,28 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	htmltomarkdown "github.com/JohannesKaufmann/html-to-markdown/v2"
 	"github.com/soyokaze83/invictus/internal/domain"
 )
 
-const baseURL = "https://hacker-news.firebaseio.com/v0"
-
 type Client struct {
-	http *http.Client
+	http    *http.Client
+	baseURL string
 }
 
 func New() *Client {
-	return &Client{http: &http.Client{}}
+	return &Client{
+		http:    &http.Client{Timeout: 30 * time.Second},
+		baseURL: "https://hacker-news.firebaseio.com/v0",
+	}
 }
 
 func (c *Client) GetBestStories(ctx context.Context) ([]int, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", baseURL+"/beststories.json", nil)
+
+	reqUrl := fmt.Sprintf("%s/beststories.json", c.baseURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", reqUrl, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -42,8 +47,9 @@ func (c *Client) GetBestStories(ctx context.Context) ([]int, error) {
 }
 
 func (c *Client) GetStory(ctx context.Context, id int) (*domain.Story, error) {
-	url := fmt.Sprintf("%s/item/%d.json", baseURL, id)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+
+	reqUrl := fmt.Sprintf("%s/item/%d.json", c.baseURL, id)
+	req, err := http.NewRequestWithContext(ctx, "GET", reqUrl, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +91,7 @@ func (c *Client) FetchAndClean(ctx context.Context, url string) (string, error) 
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024)) // 10MB max
 	if err != nil {
 		return "", err
 	}

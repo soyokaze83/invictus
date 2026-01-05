@@ -11,13 +11,16 @@ import (
 )
 
 type Config struct {
-	APIKeys        []string
-	ModelType      string
-	ModelName      string
-	EmbeddingModel string
-	PostgresURL    string
-	TargetHour     int
-	PortNumber     int
+	APIKeys            []string
+	ModelType          string
+	ModelName          string
+	EmbeddingModel     string
+	EmbeddingDim       int
+	EmbeddingBatchSize int
+	UseBatchEmbedding  bool
+	PostgresURL        string
+	TargetHour         int
+	PortNumber         int
 }
 
 func LoadConfig() (*Config, error) {
@@ -28,6 +31,30 @@ func LoadConfig() (*Config, error) {
 	modelType := os.Getenv("MODEL_TYPE")
 	modelName := os.Getenv("MODEL_NAME")
 	embeddingModel := os.Getenv("EMBEDDING_MODEL_NAME")
+
+	// Auto-detect embedding dimension based on provider type
+	var embeddingDim int
+	switch modelType {
+	case "minilm":
+		embeddingDim = 384
+	case "gemini":
+		embeddingDim = 3072
+	case "openai":
+		embeddingDim = 1536
+	default:
+		embeddingDim = 384
+	}
+
+	log.Printf("Using embedding dimension %d for provider %s", embeddingDim, modelType)
+	embeddingBatchSize, err := strconv.Atoi(os.Getenv("EMBEDDING_BATCH_SIZE"))
+	if err != nil || embeddingBatchSize <= 0 {
+		embeddingBatchSize = 100
+		log.Println("Invalid or missing EMBEDDING_BATCH_SIZE, using 100 as default")
+	}
+	useBatchEmbedding := true
+	if val := os.Getenv("USE_BATCH_EMBEDDING"); val == "false" || val == "0" {
+		useBatchEmbedding = false
+	}
 	postgresURL := os.Getenv("POSTGRES_URL")
 	targetHour, err := strconv.Atoi(os.Getenv("TARGET_HOUR"))
 	if err != nil {
@@ -41,12 +68,21 @@ func LoadConfig() (*Config, error) {
 	}
 
 	cfg := &Config{
-		ModelType:      modelType,
-		ModelName:      modelName,
-		PostgresURL:    postgresURL,
-		EmbeddingModel: embeddingModel,
-		TargetHour:     targetHour,
-		PortNumber:     portNumber,
+		ModelType:          modelType,
+		ModelName:          modelName,
+		PostgresURL:        postgresURL,
+		EmbeddingModel:     embeddingModel,
+		EmbeddingDim:       embeddingDim,
+		EmbeddingBatchSize: embeddingBatchSize,
+		UseBatchEmbedding:  useBatchEmbedding,
+		TargetHour:         targetHour,
+		PortNumber:         portNumber,
+	}
+
+	// MiniLM doesn't require API keys
+	if cfg.ModelType == "minilm" {
+		cfg.APIKeys = []string{}
+		return cfg, nil
 	}
 
 	keyMapping := map[string]string{
