@@ -11,13 +11,15 @@ import (
 )
 
 type Config struct {
-	APIKeys        []string
-	ModelType      string
-	ModelName      string
-	EmbeddingModel string
-	PostgresURL    string
-	TargetHour     int
-	PortNumber     int
+	APIKeys            []string
+	ModelType          string
+	ModelName          string
+	EmbeddingModel     string
+	EmbeddingDim       int
+	EmbeddingBatchSize int
+	PostgresURL        string
+	TargetHour         int
+	PortNumber         int
 }
 
 func LoadConfig() (*Config, error) {
@@ -28,6 +30,16 @@ func LoadConfig() (*Config, error) {
 	modelType := os.Getenv("MODEL_TYPE")
 	modelName := os.Getenv("MODEL_NAME")
 	embeddingModel := os.Getenv("EMBEDDING_MODEL_NAME")
+	embeddingDim, err := strconv.Atoi(os.Getenv("EMBEDDING_DIM"))
+	if err != nil {
+		embeddingDim = 3072
+		log.Println("Invalid or missing EMBEDDING_DIM, using 3072 as default")
+	}
+	embeddingBatchSize, err := strconv.Atoi(os.Getenv("EMBEDDING_BATCH_SIZE"))
+	if err != nil || embeddingBatchSize <= 0 {
+		embeddingBatchSize = 100
+		log.Println("Invalid or missing EMBEDDING_BATCH_SIZE, using 100 as default")
+	}
 	postgresURL := os.Getenv("POSTGRES_URL")
 	targetHour, err := strconv.Atoi(os.Getenv("TARGET_HOUR"))
 	if err != nil {
@@ -41,12 +53,14 @@ func LoadConfig() (*Config, error) {
 	}
 
 	cfg := &Config{
-		ModelType:      modelType,
-		ModelName:      modelName,
-		PostgresURL:    postgresURL,
-		EmbeddingModel: embeddingModel,
-		TargetHour:     targetHour,
-		PortNumber:     portNumber,
+		ModelType:          modelType,
+		ModelName:          modelName,
+		PostgresURL:        postgresURL,
+		EmbeddingModel:     embeddingModel,
+		EmbeddingDim:       embeddingDim,
+		EmbeddingBatchSize: embeddingBatchSize,
+		TargetHour:         targetHour,
+		PortNumber:         portNumber,
 	}
 
 	keyMapping := map[string]string{

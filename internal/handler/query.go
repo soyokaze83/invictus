@@ -2,17 +2,23 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
-	"github.com/soyokaze83/invictus/internal/service"
+	"github.com/soyokaze83/invictus/internal/domain"
+	"github.com/soyokaze83/invictus/internal/provider"
 )
 
 type QueryHandler struct {
-	llm_svc *service.GeminiService
+	llm provider.LLMProvider
 }
 
-func NewQueryHandler(llm_svc *service.GeminiService) *QueryHandler {
-	return &QueryHandler{llm_svc: llm_svc}
+type QueryRequest struct {
+	Query string `json:"query"`
+}
+
+func NewQueryHandler(llm provider.LLMProvider) *QueryHandler {
+	return &QueryHandler{llm: llm}
 }
 
 func (q *QueryHandler) ReadRoot(w http.ResponseWriter, r *http.Request) {
@@ -27,20 +33,19 @@ func (q *QueryHandler) ReadRoot(w http.ResponseWriter, r *http.Request) {
 
 func (q *QueryHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 
-	var req struct {
-		Query string `json:"query"`
-	}
+	var req domain.LLMRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	fullText, err := q.llm_svc.Query(r.Context(), req.Query)
+	responseText, err := q.llm.Generate(r.Context(), req)
 	if err != nil {
+		slog.Error("Failed to generate a response", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(fullText)
+	json.NewEncoder(w).Encode(responseText)
 }

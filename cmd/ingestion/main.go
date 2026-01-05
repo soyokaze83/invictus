@@ -2,145 +2,209 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/soyokaze83/invictus/internal/config"
 	"github.com/soyokaze83/invictus/internal/domain"
 	"github.com/soyokaze83/invictus/internal/hackernews"
-	"github.com/soyokaze83/invictus/internal/service"
+	"github.com/soyokaze83/invictus/internal/provider"
 	"github.com/soyokaze83/invictus/internal/vectordb"
 )
 
 func main() {
-	ctx := context.Background()
+	// Setup graceful shutdown
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 
+	// Load configurations
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		slog.Error("Failed to load config", "error", err)
-		return
+		os.Exit(1)
 	}
 
-	// Initialize clients
-	vdb, err := vectordb.New(ctx, cfg.PostgresURL)
+	// Initialize pgvector database
+	vdb, err := vectordb.New(ctx, cfg.PostgresURL, cfg.EmbeddingDim)
 	if err != nil {
 		slog.Error("Failed to init vectordb", "error", err)
 		os.Exit(1)
 	}
 	defer vdb.Close()
 
-	embeddingModel, err := service.NewGeminiService(ctx, cfg.APIKeys, cfg.ModelName)
+	// Initialize embedding model
+	providerType := provider.ProviderType(cfg.ModelType)
+	embeddingModel, err := provider.NewProvider(ctx, providerType, cfg.ModelName, cfg.APIKeys)
 	if err != nil {
-		slog.Error("Failed to init gemini", "error", err)
+		slog.Error("Failed to initialize LLM", "error", err)
 		os.Exit(1)
 	}
 	defer embeddingModel.Close()
 
 	hn := hackernews.New()
 
-	// Run immediately on start, then schedule
-	runIngestion(ctx, hn, embeddingModel, vdb)
+	// Run immediately on start
+	runIngestion(ctx, hn, embeddingModel, vdb, cfg.EmbeddingBatchSize)
+
+	// Start HTTP server for manual triggers
+	server := &http.Server{Addr: ":8081"}
+	http.HandleFunc("/trigger-ingestion", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		go runIngestion(ctx, hn, embeddingModel, vdb, cfg.EmbeddingBatchSize)
+		w.Write([]byte("Ingestion triggered"))
+	})
 
 	go func() {
-		http.HandleFunc("/trigger-ingestion", func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != http.MethodPost {
-				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-				return
-			}
-			go runIngestion(ctx, hn, embeddingModel, vdb)
-			w.Write([]byte("Ingestion triggered"))
-		})
 		slog.Info("Manual trigger endpoint listening on :8081")
-		http.ListenAndServe(":8081", nil)
+		if err := server.ListenAndServe(); err != http.ErrServerClosed {
+			slog.Error("HTTP server error", "error", err)
+		}
 	}()
 
+	// Daily scheduler
 	wib := time.FixedZone("WIB", 7*60*60) // UTC+7
-
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		if time.Now().In(wib).Hour() == cfg.TargetHour {
-			runIngestion(ctx, hn, embeddingModel, vdb)
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("Shutting down gracefully...")
+			server.Shutdown(context.Background())
+			return
+		case <-ticker.C:
+			if time.Now().In(wib).Hour() == cfg.TargetHour {
+				runIngestion(ctx, hn, embeddingModel, vdb, cfg.EmbeddingBatchSize)
+			}
 		}
 	}
-
 }
 
-func runIngestion(ctx context.Context, hn *hackernews.Client, embeddingModel *service.GeminiService, vdb *vectordb.VectorDB) {
+func runIngestion(ctx context.Context, hn *hackernews.Client, llm provider.LLMProvider, vdb *vectordb.VectorDB, batchSize int) {
+	slog.Info("Starting ingestion")
+
+	// Phase 1: Fetch story IDs
 	ids, err := hn.GetBestStories(ctx)
 	if err != nil {
 		slog.Error("Failed to fetch best stories", "error", err)
 		return
 	}
+	slog.Info("Fetched story IDs", "count", len(ids))
 
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 5)
+	// Phase 2: Fetch story content in parallel
+	stories := fetchStoriesParallel(ctx, hn, ids, 5)
+	if len(stories) == 0 {
+		slog.Warn("No stories fetched successfully")
+		return
+	}
+	slog.Info("Fetched story content", "successful", len(stories), "total", len(ids))
+
+	// Phase 3: Batch embed all texts (sanitize UTF-8 first)
+	texts := make([]string, len(stories))
+	for i, s := range stories {
+		texts[i] = sanitizeUTF8(s.Content)
+	}
+
+	embeddings, err := llm.EmbedBatchWithRetry(ctx, texts, 5, batchSize)
+	if err != nil {
+		slog.Error("Failed to batch embed", "error", err)
+		return
+	}
+	slog.Info("Generated embeddings", "count", len(embeddings))
+
+	// Phase 4: Combine stories with embeddings and batch upsert
+	domainStories := make([]domain.Story, len(stories))
+	for i, s := range stories {
+		domainStories[i] = domain.Story{
+			ID:        s.ID,
+			Author:    s.Author,
+			Title:     s.Title,
+			URL:       s.URL,
+			Score:     s.Score,
+			Timestamp: s.Timestamp,
+			Content:   s.Content,
+			Embedding: embeddings[i],
+		}
+	}
+
+	if err := vdb.UpsertBatch(ctx, domainStories); err != nil {
+		slog.Error("Failed to batch upsert", "error", err)
+		return
+	}
+
+	// Create IVFFlat index if it doesn't exist (works better after data is loaded)
+	if err := vdb.CreateIndex(ctx, 100); err != nil {
+		slog.Warn("Failed to create index (may already exist)", "error", err)
+	}
+
+	slog.Info("Ingestion complete", "stories_ingested", len(domainStories))
+}
+
+// fetchStoriesParallel fetches stories concurrently with a semaphore limit.
+// Skips failures and returns only successfully fetched stories.
+func fetchStoriesParallel(ctx context.Context, hn *hackernews.Client, ids []int, concurrency int) []*domain.Story {
+	var (
+		mu      sync.Mutex
+		wg      sync.WaitGroup
+		sem     = make(chan struct{}, concurrency)
+		stories []*domain.Story
+	)
 
 	for _, id := range ids {
 		wg.Add(1)
 		go func(storyID int) {
 			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
 
-			if err := processStory(ctx, hn, embeddingModel, vdb, storyID); err != nil {
-				slog.Warn("Failed to process story", "id", storyID, "error", err)
+			select {
+			case <-ctx.Done():
+				return
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
 			}
+
+			story, err := hn.GetStory(ctx, storyID)
+			if err != nil {
+				slog.Warn("Failed to fetch story", "id", storyID, "error", err)
+				return
+			}
+
+			// Skip stories without URL or content
+			if story.URL == "" || story.Content == "" {
+				slog.Debug("Skipping story without content", "id", storyID)
+				return
+			}
+
+			// Truncate content to 8000 chars for embedding
+			if len(story.Content) > 8000 {
+				story.Content = story.Content[:8000]
+			}
+
+			mu.Lock()
+			stories = append(stories, story)
+			mu.Unlock()
 		}(id)
 	}
 
 	wg.Wait()
-	slog.Info("Ingestion complete")
+	return stories
 }
 
-func processStory(
-	ctx context.Context,
-	hn *hackernews.Client,
-	gemini *service.GeminiService,
-	vdb *vectordb.VectorDB,
-	storyID int,
-) error {
-	story, err := hn.GetStory(ctx, storyID)
-	if err != nil {
-		return fmt.Errorf("fetch story: %w", err)
+// sanitizeUTF8 removes invalid UTF-8 sequences and problematic characters
+// that can cause issues with the Gemini API.
+func sanitizeUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
 	}
-
-	if story.URL == "" {
-		return fmt.Errorf("no URL for story %d", storyID)
-	}
-	if story.Content == "" {
-		return fmt.Errorf("no content for story %d", storyID)
-	}
-
-	if len(story.Content) > 8000 {
-		story.Content = story.Content[:8000]
-	}
-
-	embedding, err := gemini.EmbedWithRetry(ctx, story.Content, 5)
-	if err != nil {
-		return err
-	}
-
-	embedded_story := domain.Story{
-		ID:        storyID,
-		Author:    story.Author,
-		Title:     story.Title,
-		URL:       story.URL,
-		Score:     story.Score,
-		Timestamp: story.Timestamp,
-		Content:   story.Content,
-		Embedding: embedding,
-	}
-
-	if err := vdb.Upsert(ctx, embedded_story); err != nil {
-		return fmt.Errorf("upsert: %w", err)
-	}
-
-	slog.Info("Ingested story", "id", embedded_story.ID, "title", embedded_story.Title)
-	return nil
+	// Replace invalid UTF-8 sequences with empty string
+	return strings.ToValidUTF8(s, "")
 }

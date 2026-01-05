@@ -1,3 +1,0 @@
-package service
-
-// For future custom open-source and fine-tuned models ...
