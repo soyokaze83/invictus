@@ -51,7 +51,7 @@ func main() {
 	hn := hackernews.New()
 
 	// Run immediately on start
-	runIngestion(ctx, hn, embeddingModel, vdb, cfg.EmbeddingBatchSize)
+	runIngestion(ctx, hn, embeddingModel, vdb, cfg.EmbeddingBatchSize, cfg.UseBatchEmbedding)
 
 	// Start HTTP server for manual triggers
 	server := &http.Server{Addr: ":8081"}
@@ -60,7 +60,7 @@ func main() {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		go runIngestion(ctx, hn, embeddingModel, vdb, cfg.EmbeddingBatchSize)
+		go runIngestion(ctx, hn, embeddingModel, vdb, cfg.EmbeddingBatchSize, cfg.UseBatchEmbedding)
 		w.Write([]byte("Ingestion triggered"))
 	})
 
@@ -84,13 +84,13 @@ func main() {
 			return
 		case <-ticker.C:
 			if time.Now().In(wib).Hour() == cfg.TargetHour {
-				runIngestion(ctx, hn, embeddingModel, vdb, cfg.EmbeddingBatchSize)
+				runIngestion(ctx, hn, embeddingModel, vdb, cfg.EmbeddingBatchSize, cfg.UseBatchEmbedding)
 			}
 		}
 	}
 }
 
-func runIngestion(ctx context.Context, hn *hackernews.Client, llm provider.LLMProvider, vdb *vectordb.VectorDB, batchSize int) {
+func runIngestion(ctx context.Context, hn *hackernews.Client, llm provider.LLMProvider, vdb *vectordb.VectorDB, batchSize int, useBatch bool) {
 	slog.Info("Starting ingestion")
 
 	// Phase 1: Fetch story IDs
@@ -115,10 +115,26 @@ func runIngestion(ctx context.Context, hn *hackernews.Client, llm provider.LLMPr
 		texts[i] = sanitizeUTF8(s.Content)
 	}
 
-	embeddings, err := llm.EmbedBatchWithRetry(ctx, texts, 5, batchSize)
-	if err != nil {
-		slog.Error("Failed to batch embed", "error", err)
-		return
+	var embeddings [][]float32
+	if useBatch {
+		embeddings, err = llm.EmbedBatchWithRetry(ctx, texts, 5, batchSize)
+		if err != nil {
+			slog.Error("Failed to batch embed", "error", err)
+			return
+		}
+	} else {
+		slog.Info("Using single embedding mode")
+		embeddings = make([][]float32, len(texts))
+		for i, text := range texts {
+			embeddings[i], err = llm.EmbedWithRetry(ctx, text, 5)
+			if err != nil {
+				slog.Error("Failed to embed text", "index", i, "error", err)
+				return
+			}
+			if (i+1)%10 == 0 {
+				slog.Info("Embedding progress", "completed", i+1, "total", len(texts))
+			}
+		}
 	}
 	slog.Info("Generated embeddings", "count", len(embeddings))
 

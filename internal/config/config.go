@@ -17,6 +17,7 @@ type Config struct {
 	EmbeddingModel     string
 	EmbeddingDim       int
 	EmbeddingBatchSize int
+	UseBatchEmbedding  bool
 	PostgresURL        string
 	TargetHour         int
 	PortNumber         int
@@ -40,6 +41,10 @@ func LoadConfig() (*Config, error) {
 		embeddingBatchSize = 100
 		log.Println("Invalid or missing EMBEDDING_BATCH_SIZE, using 100 as default")
 	}
+	useBatchEmbedding := true
+	if val := os.Getenv("USE_BATCH_EMBEDDING"); val == "false" || val == "0" {
+		useBatchEmbedding = false
+	}
 	postgresURL := os.Getenv("POSTGRES_URL")
 	targetHour, err := strconv.Atoi(os.Getenv("TARGET_HOUR"))
 	if err != nil {
@@ -59,6 +64,7 @@ func LoadConfig() (*Config, error) {
 		EmbeddingModel:     embeddingModel,
 		EmbeddingDim:       embeddingDim,
 		EmbeddingBatchSize: embeddingBatchSize,
+		UseBatchEmbedding:  useBatchEmbedding,
 		TargetHour:         targetHour,
 		PortNumber:         portNumber,
 	}
