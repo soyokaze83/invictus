@@ -74,7 +74,7 @@ func (v *VectorDB) CreateIndex(ctx context.Context, lists int) error {
 	}
 	_, err := v.pool.Exec(ctx, fmt.Sprintf(`
 		CREATE INDEX IF NOT EXISTS stories_embedding_idx
-		ON stories USING ivfflat (embedding vector_cosine_ops)
+		ON stories_hn USING ivfflat (embedding vector_cosine_ops)
 		WITH (lists = %d)
 	`, lists))
 	if err != nil {
@@ -97,7 +97,7 @@ func (v *VectorDB) SetProbes(ctx context.Context, value int) error {
 // Upsert inserts or updates a single story.
 func (v *VectorDB) Upsert(ctx context.Context, story domain.Story) error {
 	_, err := v.pool.Exec(ctx,
-		`INSERT INTO stories (id, author, title, url, score, timestamp, content, embedding)
+		`INSERT INTO stories_hn (id, author, title, url, score, timestamp, content, embedding)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (id) DO UPDATE SET
 		author = EXCLUDED.author,
@@ -166,7 +166,7 @@ func (v *VectorDB) UpsertBatch(ctx context.Context, stories []domain.Story) erro
 
 	// Merge from staging to main table
 	_, err = tx.Exec(ctx, `
-		INSERT INTO stories (id, author, title, url, score, timestamp, content, embedding)
+		INSERT INTO stories_hn (id, author, title, url, score, timestamp, content, embedding)
 		SELECT id, author, title, url, score, timestamp, content, embedding
 		FROM stories_staging
 		ON CONFLICT (id) DO UPDATE SET
@@ -193,7 +193,7 @@ func (v *VectorDB) UpsertBatch(ctx context.Context, stories []domain.Story) erro
 func (v *VectorDB) Search(ctx context.Context, queryEmbedding []float32, limit int) ([]domain.SearchResult, error) {
 	rows, err := v.pool.Query(ctx,
 		`SELECT id, title, url, content, embedding <=> $1 AS distance
-		FROM stories
+		FROM stories_hn
 		ORDER BY distance
 		LIMIT $2`,
 		pgvector.NewVector(queryEmbedding), limit,
