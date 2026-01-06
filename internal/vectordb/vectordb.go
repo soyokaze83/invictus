@@ -28,7 +28,7 @@ func New(ctx context.Context, connStr string, embeddingDim int) (*VectorDB, erro
 	_, err = conn.Exec(ctx, fmt.Sprintf(`
 		CREATE EXTENSION IF NOT EXISTS vector;
 
-		CREATE TABLE IF NOT EXISTS stories (
+		CREATE TABLE IF NOT EXISTS stories_hn (
 			id INTEGER PRIMARY KEY,
 			author TEXT,
 			title TEXT,
