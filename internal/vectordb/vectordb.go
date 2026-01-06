@@ -193,7 +193,7 @@ func (v *VectorDB) UpsertBatch(ctx context.Context, stories []domain.Story) erro
 func (v *VectorDB) Search(ctx context.Context, queryEmbedding []float32, limit int) ([]domain.SearchResult, error) {
 	rows, err := v.pool.Query(ctx,
 		`SELECT id, title, url, content, embedding <=> $1 AS distance
-		FROM stories_hn
+		FROM stories_hn 
 		ORDER BY distance
 		LIMIT $2`,
 		pgvector.NewVector(queryEmbedding), limit,
