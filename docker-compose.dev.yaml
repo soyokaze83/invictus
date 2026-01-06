@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg18-trixie
+    container_name: central-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - shared-db
+
+  ingestion:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: invictus-ingestion
+    command: ["./ingestion"]
+    env_file:
+      - .env
+    environment:
+      LD_LIBRARY_PATH: /usr/local/lib
+      POSTGRES_URL: postgres://postgres:postgres@central-postgres:5432/invictus?sslmode=disable
+    ports:
+      - "8081:8081"
+    networks:
+      - shared-db
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Query REST API service (in development)
+  # server:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: invictus-server
+  #   command: ["./server"]
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     POSTGRES_URL: postgres://postgres:postgres@central-postgres:5432/invictus?sslmode=disable
+  #   ports:
+  #     - "8082:8082"
+  #   networks:
+  #     - shared-db
+  #   restart: unless-stopped
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+
+volumes:
+  postgres_data:
+
+networks:
+  shared-db:
+    name: shared-db
+    driver: bridge

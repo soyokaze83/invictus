@@ -11,16 +11,36 @@ import (
 )
 
 type Config struct {
-	APIKeys            []string
-	ModelType          string
-	ModelName          string
-	EmbeddingModel     string
+	// Shared API keys (used by both generation and embedding if same provider)
+	GeminiAPIKeys []string
+	OpenAIAPIKeys []string
+
+	// Generation model configurations
+	GenerationModelType string
+	GenerationModelName string
+
+	// Embedding model configurations
+	EmbeddingModelType string
+	EmbeddingModelName string
 	EmbeddingDim       int
 	EmbeddingBatchSize int
 	UseBatchEmbedding  bool
-	PostgresURL        string
-	TargetHour         int
-	PortNumber         int
+
+	PostgresURL string
+	TargetHour  int
+	PortNumber  int
+}
+
+// GetAPIKeys returns the API keys for the given provider type
+func (c *Config) GetAPIKeys(providerType string) []string {
+	switch providerType {
+	case "gemini":
+		return c.GeminiAPIKeys
+	case "openai":
+		return c.OpenAIAPIKeys
+	default:
+		return []string{}
+	}
 }
 
 func LoadConfig() (*Config, error) {
@@ -28,13 +48,17 @@ func LoadConfig() (*Config, error) {
 	// load env variable
 	_ = godotenv.Load()
 
-	modelType := os.Getenv("MODEL_TYPE")
-	modelName := os.Getenv("MODEL_NAME")
-	embeddingModel := os.Getenv("EMBEDDING_MODEL_NAME")
+	// Load generation model settings
+	generationModelType := os.Getenv("GENERATION_MODEL_TYPE")
+	generationModelName := os.Getenv("GENERATION_MODEL_NAME")
 
-	// Auto-detect embedding dimension based on provider type
+	// Load embedding model settings
+	embeddingModelType := os.Getenv("EMBEDDING_MODEL_TYPE")
+	embeddingModelName := os.Getenv("EMBEDDING_MODEL_NAME")
+
+	// Auto-detect embedding dimension based on embedding provider type
 	var embeddingDim int
-	switch modelType {
+	switch embeddingModelType {
 	case "minilm":
 		embeddingDim = 384
 	case "gemini":
@@ -45,7 +69,9 @@ func LoadConfig() (*Config, error) {
 		embeddingDim = 384
 	}
 
-	log.Printf("Using embedding dimension %d for provider %s", embeddingDim, modelType)
+	log.Printf("Generation model: %s (%s)", generationModelName, generationModelType)
+	log.Printf("Embedding model: %s (%s), dimension: %d", embeddingModelName, embeddingModelType, embeddingDim)
+
 	embeddingBatchSize, err := strconv.Atoi(os.Getenv("EMBEDDING_BATCH_SIZE"))
 	if err != nil || embeddingBatchSize <= 0 {
 		embeddingBatchSize = 100
@@ -67,35 +93,31 @@ func LoadConfig() (*Config, error) {
 		log.Println("Invalid port number, using 8000 as default")
 	}
 
+	// Load API keys for each provider
+	geminiKeys := splitKeys(os.Getenv("GEMINI_API_KEYS"))
+	openaiKeys := splitKeys(os.Getenv("OPENAI_API_KEYS"))
+
 	cfg := &Config{
-		ModelType:          modelType,
-		ModelName:          modelName,
-		PostgresURL:        postgresURL,
-		EmbeddingModel:     embeddingModel,
+		// Shared API keys
+		GeminiAPIKeys: geminiKeys,
+		OpenAIAPIKeys: openaiKeys,
+
+		// Generation settings
+		GenerationModelType: generationModelType,
+		GenerationModelName: generationModelName,
+
+		// Embedding settings
+		EmbeddingModelType: embeddingModelType,
+		EmbeddingModelName: embeddingModelName,
 		EmbeddingDim:       embeddingDim,
 		EmbeddingBatchSize: embeddingBatchSize,
 		UseBatchEmbedding:  useBatchEmbedding,
-		TargetHour:         targetHour,
-		PortNumber:         portNumber,
+
+		PostgresURL: postgresURL,
+		TargetHour:  targetHour,
+		PortNumber:  portNumber,
 	}
 
-	// MiniLM doesn't require API keys
-	if cfg.ModelType == "minilm" {
-		cfg.APIKeys = []string{}
-		return cfg, nil
-	}
-
-	keyMapping := map[string]string{
-		"gemini": "GEMINI_API_KEY",
-		"openai": "OPENAI_API_KEY",
-	}
-	apiKey, ok := keyMapping[cfg.ModelType]
-	if !ok {
-		return nil, fmt.Errorf("Unsupported model type %s", cfg.ModelType)
-	}
-
-	// set API keys to config object
-	cfg.APIKeys = strings.Split(os.Getenv(apiKey), ",")
 	if err = cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -103,16 +125,42 @@ func LoadConfig() (*Config, error) {
 	return cfg, nil
 }
 
-func (c *Config) Validate() error {
-	// validate API keys
-	for _, apiKey := range c.APIKeys {
-		if apiKey == "" {
-			return fmt.Errorf("API key is required for model type %s", c.ModelType)
+// splitKeys splits comma-separated API keys and filters empty strings
+func splitKeys(s string) []string {
+	if s == "" {
+		return []string{}
+	}
+	parts := strings.Split(s, ",")
+	keys := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			keys = append(keys, p)
 		}
 	}
-	// validate model name
-	if c.ModelName == "" {
-		return fmt.Errorf("MODEL_NAME must be specified")
+	return keys
+}
+
+func (c *Config) Validate() error {
+	// Validate generation model
+	if c.GenerationModelType != "minilm" {
+		if len(c.GetAPIKeys(c.GenerationModelType)) == 0 {
+			return fmt.Errorf("API keys required for generation model type %s", c.GenerationModelType)
+		}
 	}
+	if c.GenerationModelName == "" {
+		return fmt.Errorf("GENERATION_MODEL_NAME must be specified")
+	}
+
+	// Validate embedding model
+	if c.EmbeddingModelType != "minilm" {
+		if len(c.GetAPIKeys(c.EmbeddingModelType)) == 0 {
+			return fmt.Errorf("API keys required for embedding model type %s", c.EmbeddingModelType)
+		}
+	}
+	if c.EmbeddingModelName == "" {
+		return fmt.Errorf("EMBEDDING_MODEL_NAME must be specified")
+	}
+
 	return nil
 }

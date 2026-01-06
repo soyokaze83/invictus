@@ -40,10 +40,14 @@ func main() {
 	defer vdb.Close()
 
 	// Initialize embedding model
-	providerType := provider.ProviderType(cfg.ModelType)
-	embeddingModel, err := provider.NewProvider(ctx, providerType, cfg.ModelName, cfg.APIKeys)
+	embeddingModel, err := provider.NewProvider(
+		ctx,
+		provider.ProviderType(cfg.EmbeddingModelType),
+		cfg.EmbeddingModelName,
+		cfg.GetAPIKeys(cfg.EmbeddingModelType),
+	)
 	if err != nil {
-		slog.Error("Failed to initialize LLM", "error", err)
+		slog.Error("Failed to initialize embedding model", "error", err)
 		os.Exit(1)
 	}
 	defer embeddingModel.Close()

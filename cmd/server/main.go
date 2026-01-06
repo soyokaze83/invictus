@@ -22,9 +22,13 @@ func main() {
 		return
 	}
 
-	// Initialize LLM provider
-	providerType := provider.ProviderType(cfg.ModelType)
-	llm, err := provider.NewProvider(ctx, providerType, cfg.ModelName, cfg.APIKeys)
+	// Initialize LLM provider (generation model)
+	llm, err := provider.NewProvider(
+		ctx,
+		provider.ProviderType(cfg.GenerationModelType),
+		cfg.GenerationModelName,
+		cfg.GetAPIKeys(cfg.GenerationModelType),
+	)
 	if err != nil {
 		slog.Error("Failed to initialize LLM", "error", err)
 		return

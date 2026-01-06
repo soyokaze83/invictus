@@ -4,7 +4,9 @@
       "Bash(go build:*)",
       "Bash(go get:*)",
       "Bash(go mod tidy:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(cd:*)",
+      "Bash(cat:*)"
     ]
   }
 }
