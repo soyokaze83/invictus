@@ -6,16 +6,15 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
-	"unicode/utf8"
 
 	"github.com/soyokaze83/invictus/internal/config"
 	"github.com/soyokaze83/invictus/internal/domain"
 	"github.com/soyokaze83/invictus/internal/hackernews"
 	"github.com/soyokaze83/invictus/internal/provider"
+	"github.com/soyokaze83/invictus/internal/utils"
 	"github.com/soyokaze83/invictus/internal/vectordb"
 )
 
@@ -116,7 +115,7 @@ func runIngestion(ctx context.Context, hn *hackernews.Client, llm provider.LLMPr
 	// Phase 3: Batch embed all texts (sanitize UTF-8 first)
 	texts := make([]string, len(stories))
 	for i, s := range stories {
-		texts[i] = sanitizeUTF8(s.Content)
+		texts[i] = utils.SanitizeUTF8(s.Content)
 	}
 
 	var embeddings [][]float32
@@ -205,7 +204,7 @@ func fetchStoriesParallel(ctx context.Context, hn *hackernews.Client, ids []int,
 			}
 
 			// Truncate content to 8000 runes for embedding (safe UTF-8 truncation)
-			story.Content = truncateUTF8(story.Content, 8000)
+			story.Content = utils.TruncateUTF8(story.Content, 8000)
 
 			mu.Lock()
 			stories = append(stories, story)
@@ -215,23 +214,4 @@ func fetchStoriesParallel(ctx context.Context, hn *hackernews.Client, ids []int,
 
 	wg.Wait()
 	return stories
-}
-
-// truncateUTF8 safely truncates a string to maxRunes without cutting multi-byte characters.
-func truncateUTF8(s string, maxRunes int) string {
-	if utf8.RuneCountInString(s) <= maxRunes {
-		return s
-	}
-	runes := []rune(s)
-	return string(runes[:maxRunes])
-}
-
-// sanitizeUTF8 removes invalid UTF-8 sequences and problematic characters
-// that can cause issues with the Gemini API.
-func sanitizeUTF8(s string) string {
-	if utf8.ValidString(s) {
-		return s
-	}
-	// Replace invalid UTF-8 sequences with empty string
-	return strings.ToValidUTF8(s, "")
 }

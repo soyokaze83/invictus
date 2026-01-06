@@ -58,14 +58,14 @@ func NewGeminiProvider(ctx context.Context, modelName string, apiKeys []string) 
 	return newProvider, nil
 }
 
-func (p *GeminiProvider) Generate(ctx context.Context, req domain.LLMRequest) (*domain.LLMResponse, error) {
+func (p *GeminiProvider) Generate(ctx context.Context, prompt string) (*domain.LLMResponse, error) {
 	p.mu.RLock()
 	client := p.client
 	p.mu.RUnlock()
 
 	model := client.GenerativeModel(p.modelName)
 
-	resp, err := model.GenerateContent(ctx, genai.Text(req.Prompt))
+	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
 		return nil, err
 	}
@@ -83,13 +83,13 @@ func (p *GeminiProvider) Generate(ctx context.Context, req domain.LLMRequest) (*
 	return &domain.LLMResponse{Content: text}, nil
 }
 
-func (p *GeminiProvider) StreamGenerate(ctx context.Context, req domain.LLMRequest) (<-chan string, error) {
+func (p *GeminiProvider) StreamGenerate(ctx context.Context, prompt string) (<-chan string, error) {
 	p.mu.RLock()
 	client := p.client
 	p.mu.RUnlock()
 
 	model := client.GenerativeModel(p.modelName)
-	iter := model.GenerateContentStream(ctx, genai.Text(req.Prompt))
+	iter := model.GenerateContentStream(ctx, genai.Text(prompt))
 
 	ch := make(chan string)
 	go func() {
@@ -116,7 +116,7 @@ func (p *GeminiProvider) EmbedWithRetry(ctx context.Context, text string, maxRet
 	var apiErr *googleapi.Error
 
 	for i := range maxRetries {
-		embedding, err := p.embed(ctx, text)
+		embedding, err := p.Embed(ctx, text)
 		if err == nil {
 			return embedding, nil
 		}
@@ -137,7 +137,7 @@ func (p *GeminiProvider) EmbedWithRetry(ctx context.Context, text string, maxRet
 	return nil, fmt.Errorf("Exhausted amount of retries")
 }
 
-func (p *GeminiProvider) embed(ctx context.Context, text string) ([]float32, error) {
+func (p *GeminiProvider) Embed(ctx context.Context, text string) ([]float32, error) {
 	p.mu.RLock()
 	client := p.client
 	p.mu.RUnlock()

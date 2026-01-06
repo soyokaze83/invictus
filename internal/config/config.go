@@ -28,7 +28,7 @@ type Config struct {
 
 	PostgresURL string
 	TargetHour  int
-	PortNumber  int
+	// PortNumber  int
 }
 
 // GetAPIKeys returns the API keys for the given provider type
@@ -87,11 +87,12 @@ func LoadConfig() (*Config, error) {
 		targetHour = 9
 		log.Println("Invalid target hour, using 9 as default")
 	}
-	portNumber, err := strconv.Atoi(os.Getenv("PORT_NUMBER"))
-	if err != nil {
-		portNumber = 8000
-		log.Println("Invalid port number, using 8000 as default")
-	}
+
+	// portNumber, err := strconv.Atoi(os.Getenv("PORT_NUMBER"))
+	// if err != nil {
+	// 	portNumber = 8000
+	// 	log.Println("Invalid port number, using 8000 as default")
+	// }
 
 	// Load API keys for each provider
 	geminiKeys := splitKeys(os.Getenv("GEMINI_API_KEYS"))
@@ -115,7 +116,7 @@ func LoadConfig() (*Config, error) {
 
 		PostgresURL: postgresURL,
 		TargetHour:  targetHour,
-		PortNumber:  portNumber,
+		// PortNumber:  portNumber,
 	}
 
 	if err = cfg.Validate(); err != nil {

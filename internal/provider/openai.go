@@ -51,11 +51,11 @@ func NewOpenAIProvider(ctx context.Context, modelName string, apiKeys []string) 
 	return newProvider, nil
 }
 
-func (p *OpenAIProvider) Generate(ctx context.Context, req domain.LLMRequest) (*domain.LLMResponse, error) {
+func (p *OpenAIProvider) Generate(ctx context.Context, prompt string) (*domain.LLMResponse, error) {
 	return nil, fmt.Errorf("Unimplemented")
 }
 
-func (p *OpenAIProvider) StreamGenerate(ctx context.Context, req domain.LLMRequest) (<-chan string, error) {
+func (p *OpenAIProvider) StreamGenerate(ctx context.Context, prompt string) (<-chan string, error) {
 	return nil, fmt.Errorf("Unimplemented")
 }
 
@@ -63,7 +63,7 @@ func (p *OpenAIProvider) EmbedWithRetry(ctx context.Context, content string, max
 	return nil, fmt.Errorf("Unimplemented")
 }
 
-func (p *OpenAIProvider) embed(ctx context.Context, text string) ([]float32, error) {
+func (p *OpenAIProvider) Embed(ctx context.Context, text string) ([]float32, error) {
 	return nil, fmt.Errorf("Unimplemented")
 }
 

@@ -9,6 +9,7 @@ import (
 	"github.com/soyokaze83/invictus/internal/handler"
 	"github.com/soyokaze83/invictus/internal/middleware"
 	"github.com/soyokaze83/invictus/internal/provider"
+	"github.com/soyokaze83/invictus/internal/vectordb"
 )
 
 func main() {
@@ -23,7 +24,7 @@ func main() {
 	}
 
 	// Initialize LLM provider (generation model)
-	llm, err := provider.NewProvider(
+	generationModel, err := provider.NewProvider(
 		ctx,
 		provider.ProviderType(cfg.GenerationModelType),
 		cfg.GenerationModelName,
@@ -33,15 +34,38 @@ func main() {
 		slog.Error("Failed to initialize LLM", "error", err)
 		return
 	}
+	defer generationModel.Close()
 
-	// init handlers
-	queryHandler := handler.NewQueryHandler(llm)
+	// Initialize LLM provider (embedding model)
+	embeddingModel, err := provider.NewProvider(
+		ctx,
+		provider.ProviderType(cfg.EmbeddingModelType),
+		cfg.EmbeddingModelName,
+		cfg.GetAPIKeys(cfg.EmbeddingModelType),
+	)
+	if err != nil {
+		slog.Error("Failed to initialize embedding model", "error", err)
+		return
+	}
+	defer embeddingModel.Close()
 
-	// apply mux on routes
+	// Initialize vector database
+	vdb, err := vectordb.New(ctx, cfg.PostgresURL, cfg.EmbeddingDim)
+	if err != nil {
+		slog.Error("Failed to init vectordb", "error", err)
+		return
+	}
+	defer vdb.Close()
+
+	// Initialize handlers
+	queryHandler := handler.NewQueryHandler(generationModel, embeddingModel, vdb)
+
+	// Apply mux on routers
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", queryHandler.ReadRoot)
 	mux.HandleFunc("POST /query", queryHandler.HandleQuery)
+	mux.HandleFunc("POST /rag-query", queryHandler.RAG)
 
 	loggedMux := middleware.LoggingMiddleware(mux)
-	http.ListenAndServe(":8000", loggedMux)
+	http.ListenAndServe(":8082", loggedMux)
 }

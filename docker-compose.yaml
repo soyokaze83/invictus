@@ -16,22 +16,23 @@ services:
       - shared-db
     restart: unless-stopped
 
-  # Query REST API service (in development)
-  # server:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   container_name: invictus-server
-  #   command: ["./server"]
-  #   env_file:
-  #     - .env
-  #   environment:
-  #     POSTGRES_URL: postgres://postgres:postgres@central-postgres:5432/invictus?sslmode=disable
-  #   ports:
-  #     - "8082:8082"
-  #   networks:
-  #     - shared-db
-  #   restart: unless-stopped
+  # Query REST API service
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: invictus-server
+    command: ["./server"]
+    env_file:
+      - .env
+    environment:
+      LD_LIBRARY_PATH: /usr/local/lib
+      POSTGRES_URL: postgres://postgres:postgres@central-postgres:5432/invictus?sslmode=disable
+    ports:
+      - "8082:8082"
+    networks:
+      - shared-db
+    restart: unless-stopped
 
 networks:
   shared-db:

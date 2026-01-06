@@ -31,12 +31,12 @@ type BaseProvider struct {
 type LLMProvider interface {
 
 	// Generation functions
-	Generate(ctx context.Context, req domain.LLMRequest) (*domain.LLMResponse, error)
-	StreamGenerate(ctx context.Context, req domain.LLMRequest) (<-chan string, error)
+	Generate(ctx context.Context, prompt string) (*domain.LLMResponse, error)
+	StreamGenerate(ctx context.Context, promtp string) (<-chan string, error)
 
 	// Embedding functions (single)
 	EmbedWithRetry(ctx context.Context, content string, maxRetries int) ([]float32, error)
-	embed(ctx context.Context, text string) ([]float32, error)
+	Embed(ctx context.Context, text string) ([]float32, error)
 
 	// Embedding functions (batch)
 	EmbedBatch(ctx context.Context, texts []string) ([][]float32, error)

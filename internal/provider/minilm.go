@@ -29,7 +29,7 @@ func NewMiniLMProvider(ctx context.Context, runtimePath string) (*MiniLMProvider
 	return &MiniLMProvider{model: model}, nil
 }
 
-func (p *MiniLMProvider) embed(ctx context.Context, text string) ([]float32, error) {
+func (p *MiniLMProvider) Embed(ctx context.Context, text string) ([]float32, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.model.Compute(text, false)
@@ -38,7 +38,7 @@ func (p *MiniLMProvider) embed(ctx context.Context, text string) ([]float32, err
 func (p *MiniLMProvider) EmbedWithRetry(ctx context.Context, content string, maxRetries int) ([]float32, error) {
 	var lastErr error
 	for i := 0; i < maxRetries; i++ {
-		embedding, err := p.embed(ctx, content)
+		embedding, err := p.Embed(ctx, content)
 		if err == nil {
 			return embedding, nil
 		}
@@ -81,11 +81,11 @@ func (p *MiniLMProvider) EmbedBatchWithRetry(ctx context.Context, texts []string
 }
 
 // Generation methods - MiniLM is embedding-only
-func (p *MiniLMProvider) Generate(ctx context.Context, req domain.LLMRequest) (*domain.LLMResponse, error) {
+func (p *MiniLMProvider) Generate(ctx context.Context, prompt string) (*domain.LLMResponse, error) {
 	return nil, fmt.Errorf("minilm: text generation not supported")
 }
 
-func (p *MiniLMProvider) StreamGenerate(ctx context.Context, req domain.LLMRequest) (<-chan string, error) {
+func (p *MiniLMProvider) StreamGenerate(ctx context.Context, prompt string) (<-chan string, error) {
 	return nil, fmt.Errorf("minilm: text generation not supported")
 }
 

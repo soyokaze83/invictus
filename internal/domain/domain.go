@@ -2,16 +2,25 @@ package domain
 
 import "time"
 
+// ========== LLM-Related ==========
+
 type LLMRequest struct {
 	ID     string `json:"id"`
 	Prompt string `json:"query"`
-	Stream bool   `json:"stream"`
 }
 
 type LLMResponse struct {
 	ID      string `json:"id"`
 	Content string `json:"content"`
+	// ContentStream string `json:"contentStream"`
 }
+
+type PromptData struct {
+	Context string
+	Query   string
+}
+
+// ========== OBJECTS ==========
 
 type Story struct {
 	ID        int
@@ -22,6 +31,9 @@ type Story struct {
 	Timestamp time.Time
 	Content   string
 	Embedding []float32 // optional, for vector storage
+}
+
+type ChatMessage struct {
 }
 
 type SearchResult struct {
